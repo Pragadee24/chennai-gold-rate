@@ -92,6 +92,10 @@ input,select{width:100%;background:var(--field);border:1px solid var(--line);col
 .diff .m span{color:var(--muted);font-size:12px}
 .diff .m b{font:700 19px var(--display)}
 .diff .m b.hl{color:var(--green-ink);font-size:24px}
+.gap{border:1px solid #5a4a22;background:#1d1a10;border-radius:12px;padding:14px 16px;display:flex;flex-wrap:wrap;gap:8px 20px;align-items:center;justify-content:space-between}
+.gap .f{color:var(--muted);font-size:13px;display:grid;gap:2px}
+.gap .f b{color:var(--fg);font:600 15px var(--body)}
+.gap .v{font:700 26px var(--display);color:var(--gold)}
 .note{color:var(--muted);font-size:12.5px;margin:0}
 
 /* trend */
@@ -213,6 +217,10 @@ input,select{width:100%;background:var(--field);border:1px solid var(--line);col
         <div class="m"><span>Cheaper by</span><b class="num" id="dPct">—</b></div>
         <div class="m"><span>Pure gold content</span><b class="num" id="dPure">—</b></div>
       </div>
+      <div class="gap" aria-live="polite">
+        <div class="f"><b id="gTitle">22K total value − 18K base value</b><span class="num" id="gFormula">—</span></div>
+        <span class="v num" id="gVal">—</span>
+      </div>
       <p class="note" id="cmpNote"></p>
     </section>
 
@@ -323,6 +331,9 @@ function renderCompare(){
   $("dTotal").textContent = inr(diff);
   $("dPerG").textContent = inr(ra-rb);
   $("dPct").textContent = pa.total>0 ? (diff/pa.total*100).toFixed(1)+"%" : "—";
+  $("gTitle").textContent = `${a} total value − ${b} base value`;
+  $("gFormula").textContent = `${inr(pa.total)} − ${inr(pb.base)}`;
+  $("gVal").textContent = inr(pa.total - pb.base);
   $("dPure").textContent = `${(w*PURITY[a]).toFixed(2)} vs ${(w*PURITY[b]).toFixed(2)} g`;
   $("cmpNote").textContent = `For the same ${w} g at ${m}% making${g?` and ${g}% GST`:""}, ${b} costs ${inr(diff)} less than ${a}. You also get ${(w*(PURITY[a]-PURITY[b])).toFixed(2)} g less pure gold, so ${b} is the cheaper buy but holds less resale value.`;
 }
