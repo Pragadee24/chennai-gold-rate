@@ -86,6 +86,9 @@ input,select{width:100%;background:var(--field);border:1px solid var(--line);col
 .side dd{margin:0;text-align:right;color:var(--fg)}
 .side .tot{border-top:1px solid var(--line-soft);padding-top:8px;display:flex;justify-content:space-between;font-weight:700}
 .side .tot span:last-child{font:700 18px var(--display);color:var(--gold)}
+.sw{display:flex;align-items:center;justify-content:space-between;gap:10px;color:var(--muted)}
+.sw input{max-width:140px;text-align:right}
+#sideA,#sideB{display:grid;gap:8px}
 .vs{display:grid;place-items:center;color:var(--dim);font:600 12px var(--display)}
 .diff{border:1px solid #1f4a37;background:var(--card-2);border-radius:12px;padding:16px;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
 .diff .m{display:grid;gap:2px}
@@ -199,7 +202,7 @@ input,select{width:100%;background:var(--field);border:1px solid var(--line);col
 
     <section class="compare" id="compare" aria-labelledby="cmpTitle">
       <div class="cmp-head">
-        <h2 class="section-title" id="cmpTitle">Compare purities for <span class="num" id="cmpW">10 g</span></h2>
+        <h2 class="section-title" id="cmpTitle">Compare purities <span class="sub">(set a separate weight for each side)</span></h2>
         <div class="seg" role="group" aria-label="Comparison pair" id="pair">
           <button type="button" data-a="22K" data-b="18K" aria-pressed="true">22K vs 18K</button>
           <button type="button" data-a="24K" data-b="22K" aria-pressed="false">24K vs 22K</button>
@@ -207,14 +210,22 @@ input,select{width:100%;background:var(--field);border:1px solid var(--line);col
         </div>
       </div>
       <div class="cmp">
-        <div class="side" id="sideA"></div>
+        <div class="side">
+          <div class="k"><span id="kA">22K</span> <small id="pA"></small></div>
+          <label class="sw"><span>Weight (gm)</span><input id="wA" type="number" min="0" step="0.001" value="10" inputmode="decimal"></label>
+          <div id="sideA"></div>
+        </div>
         <div class="vs">VS</div>
-        <div class="side" id="sideB"></div>
+        <div class="side">
+          <div class="k"><span id="kB">18K</span> <small id="pB"></small></div>
+          <label class="sw"><span>Weight (gm)</span><input id="wB" type="number" min="0" step="0.001" value="10" inputmode="decimal"></label>
+          <div id="sideB"></div>
+        </div>
       </div>
       <div class="diff">
-        <div class="m"><span>You save with <b id="dLowK" style="font-size:12px">18K</b></span><b class="hl num" id="dTotal">—</b></div>
+        <div class="m"><span id="dTotalLabel">Total difference</span><b class="hl num" id="dTotal">—</b></div>
         <div class="m"><span>Difference per gram (rate)</span><b class="num" id="dPerG">—</b></div>
-        <div class="m"><span>Cheaper by</span><b class="num" id="dPct">—</b></div>
+        <div class="m"><span id="dPctLabel">Cheaper by</span><b class="num" id="dPct">—</b></div>
         <div class="m"><span>Pure gold content</span><b class="num" id="dPure">—</b></div>
       </div>
       <div class="gap" aria-live="polite">
@@ -303,9 +314,8 @@ function renderCalc(){
   }).join("");
 }
 
-function sideHTML(k, p, rate){
-  return `<div class="k">${k} <small>${(PURITY[k]*100).toFixed(1)}% pure</small></div>
-    <dl class="num">
+function sideHTML(p, rate){
+  return `<dl class="num">
       <dt>Rate /g</dt><dd>${inr(rate)}</dd>
       <dt>Base value</dt><dd>${inr(p.base)}</dd>
       <dt>Making</dt><dd>${inr(p.making)}</dd>
@@ -314,29 +324,43 @@ function sideHTML(k, p, rate){
     <div class="tot"><span>Total</span><span class="num">${inr(p.total)}</span></div>`;
 }
 
+// Each comparison side has its own weight. Until the viewer edits it, it follows the calculator weight.
+const sideEdited = {A:false, B:false};
+function sideWeight(id){ return Math.max(0, +$("w"+id).value||0); }
+
 function renderCompare(){
   const gold = state.metal==="gold";
   for(const id of ["compare","cmpRule","trend","trendRule"]) $(id).hidden = !gold;
   $("purityField").hidden = !gold;
   if(!gold) return;
   const {w,m,g} = inputs();
+  for(const id of ["A","B"]) if(!sideEdited[id] && document.activeElement!==$("w"+id)) $("w"+id).value = $("weight").value;
+  const wa = sideWeight("A"), wb = sideWeight("B");
   const [a,b] = state.pair;
   const ra = rateFor(a), rb = rateFor(b);
-  const pa = price(ra,w,m,g), pb = price(rb,w,m,g);
-  $("cmpW").textContent = (+w).toLocaleString("en-IN",{maximumFractionDigits:3}) + " g";
-  $("sideA").innerHTML = sideHTML(a,pa,ra);
-  $("sideB").innerHTML = sideHTML(b,pb,rb);
+  const pa = price(ra,wa,m,g), pb = price(rb,wb,m,g);
+  $("kA").textContent = a; $("pA").textContent = (PURITY[a]*100).toFixed(1)+"% pure";
+  $("kB").textContent = b; $("pB").textContent = (PURITY[b]*100).toFixed(1)+"% pure";
+  $("sideA").innerHTML = sideHTML(pa,ra);
+  $("sideB").innerHTML = sideHTML(pb,rb);
   const diff = pa.total-pb.total;
-  $("dLowK").textContent = b;
-  $("dTotal").textContent = inr(diff);
+  $("dTotalLabel").textContent = `${a} total − ${b} total`;
+  $("dTotal").textContent = (diff<0?"−":"") + inr(Math.abs(diff));
   $("dPerG").textContent = inr(ra-rb);
-  $("dPct").textContent = pa.total>0 ? (diff/pa.total*100).toFixed(1)+"%" : "—";
+  $("dPctLabel").textContent = diff>=0 ? `${b} cheaper by` : `${b} costlier by`;
+  $("dPct").textContent = pa.total>0 ? Math.abs(diff/pa.total*100).toFixed(1)+"%" : "—";
+  const gv = pa.total - pb.base;
   $("gTitle").textContent = `${a} total value − ${b} base value`;
-  $("gFormula").textContent = `${inr(pa.total)} − ${inr(pb.base)}`;
-  $("gVal").textContent = inr(pa.total - pb.base);
-  $("dPure").textContent = `${(w*PURITY[a]).toFixed(2)} vs ${(w*PURITY[b]).toFixed(2)} g`;
-  $("cmpNote").textContent = `For the same ${w} g at ${m}% making${g?` and ${g}% GST`:""}, ${b} costs ${inr(diff)} less than ${a}. You also get ${(w*(PURITY[a]-PURITY[b])).toFixed(2)} g less pure gold, so ${b} is the cheaper buy but holds less resale value.`;
+  $("gFormula").textContent = `${inr(pa.total)} (${fmtW(wa)}) − ${inr(pb.base)} (${fmtW(wb)})`;
+  $("gVal").textContent = (gv<0?"−":"") + inr(Math.abs(gv));
+  const pureA = wa*PURITY[a], pureB = wb*PURITY[b];
+  $("dPure").textContent = `${pureA.toFixed(2)} vs ${pureB.toFixed(2)} g`;
+  const terms = `${m}% making${g?` and ${g}% GST`:""}`;
+  $("cmpNote").textContent = diff>=0
+    ? `${fmtW(wb)} of ${b} costs ${inr(diff)} less than ${fmtW(wa)} of ${a} at ${terms}, and holds ${Math.abs(pureA-pureB).toFixed(2)} g ${pureB<=pureA?"less":"more"} pure gold.`
+    : `${fmtW(wb)} of ${b} costs ${inr(-diff)} more than ${fmtW(wa)} of ${a} at ${terms}, and holds ${Math.abs(pureA-pureB).toFixed(2)} g ${pureB<=pureA?"less":"more"} pure gold.`;
 }
+function fmtW(x){ return (+x).toLocaleString("en-IN",{maximumFractionDigits:3})+" g"; }
 
 function renderChart(){
   const h = state.data.history||[]; const el = $("chart");
@@ -401,6 +425,7 @@ segBind(".seg[aria-label='Metal']", b=>state.metal=b.dataset.metal);
 segBind("#purity", b=>state.purity=b.dataset.k);
 segBind("#pair", b=>state.pair=[b.dataset.a,b.dataset.b]);
 ["weight","making","gst","budget"].forEach(id=>$(id).addEventListener("input",renderAll));
+["A","B"].forEach(id=>$("w"+id).addEventListener("input",()=>{ sideEdited[id]=true; renderAll(); }));
 $("refresh").addEventListener("click",()=>load(true));
 load();
 setInterval(()=>load(), 30*60*1000);
