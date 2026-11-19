@@ -88,6 +88,13 @@ input,select{width:100%;background:var(--field);border:1px solid var(--line);col
 .side .tot span:last-child{font:700 18px var(--display);color:var(--gold)}
 .sw{display:flex;align-items:center;justify-content:space-between;gap:10px;color:var(--muted)}
 .sw input{max-width:140px;text-align:right}
+.custom-bar{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;border:1px dashed var(--gold);border-radius:10px;padding:10px 14px;color:var(--muted)}
+.custom-bar b{color:var(--gold)}
+.rcard.edit{border-color:var(--gold)}
+.rcard .pin{display:flex;align-items:center;gap:6px;background:var(--field);border:1px solid var(--line);border-radius:9px;padding:0 10px}
+.rcard .pin span{font:600 20px var(--display);color:var(--muted)}
+.rcard .pin input{border:0;background:transparent;padding:8px 0;font:600 20px var(--display);min-width:0}
+.rcard .live{font-size:12px;color:var(--dim)}
 #sideA,#sideB{display:grid;gap:8px}
 .vs{display:grid;place-items:center;color:var(--dim);font:600 12px var(--display)}
 .diff{border:1px solid #1f4a37;background:var(--card-2);border-radius:12px;padding:16px;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
@@ -150,8 +157,17 @@ input,select{width:100%;background:var(--field);border:1px solid var(--line);col
         <button type="button" data-metal="silver" aria-pressed="false">Silver</button>
         <button type="button" data-metal="platinum" aria-pressed="false">Platinum</button>
       </div>
+      <div class="seg" role="group" aria-label="Rate source" id="rateMode">
+        <button type="button" data-mode="live" aria-pressed="true">Live rate</button>
+        <button type="button" data-mode="custom" aria-pressed="false">Custom rate</button>
+      </div>
       <span class="spacer"></span>
       <span class="city">Chennai</span>
+    </div>
+
+    <div class="custom-bar" id="customBar" hidden>
+      <span><b>Custom rates</b> are in use. Type your rate per gram in the cards below; every calculation uses it.</span>
+      <button class="btn" id="resetCustom" type="button">Reset to live rates</button>
     </div>
 
     <div class="cards" id="cards"><div class="rcard skeleton">Fetching rates…</div></div>
@@ -213,12 +229,14 @@ input,select{width:100%;background:var(--field);border:1px solid var(--line);col
         <div class="side">
           <div class="k"><span id="kA">22K</span> <small id="pA"></small></div>
           <label class="sw"><span>Weight (gm)</span><input id="wA" type="number" min="0" step="0.001" value="10" inputmode="decimal"></label>
+          <label class="sw rate-in" hidden><span>Rate /g (₹)</span><input id="rA" type="number" min="0" step="1" inputmode="decimal"></label>
           <div id="sideA"></div>
         </div>
         <div class="vs">VS</div>
         <div class="side">
           <div class="k"><span id="kB">18K</span> <small id="pB"></small></div>
           <label class="sw"><span>Weight (gm)</span><input id="wB" type="number" min="0" step="0.001" value="10" inputmode="decimal"></label>
+          <label class="sw rate-in" hidden><span>Rate /g (₹)</span><input id="rB" type="number" min="0" step="1" inputmode="decimal"></label>
           <div id="sideB"></div>
         </div>
       </div>
@@ -251,15 +269,21 @@ input,select{width:100%;background:var(--field);border:1px solid var(--line);col
 
 <script>
 const PURITY = {"24K":0.999,"22K":0.916,"18K":0.75};
-const state = {data:null, metal:"gold", purity:"22K", pair:["22K","18K"]};
+const state = {data:null, metal:"gold", purity:"22K", pair:["22K","18K"], mode:"live", custom:{}};
+try{ const saved = JSON.parse(localStorage.getItem("customRates")||"{}"); if(saved && typeof saved==="object") state.custom = saved; }catch(e){}
+function saveCustom(){ try{ localStorage.setItem("customRates", JSON.stringify(state.custom)); }catch(e){} }
+function liveRate(key){
+  const d = state.data; if(!d) return null;
+  return (d.rates[key] ?? d[key])?.price ?? null;
+}
 const $ = id => document.getElementById(id);
 const inr = (n, d=0) => "₹" + Number(n).toLocaleString("en-IN",{maximumFractionDigits:d,minimumFractionDigits:d});
 const grams = n => (n>=100? n.toFixed(1) : n.toFixed(3)) + " g";
 
 function rateFor(k){
-  const d = state.data; if(!d) return null;
-  if(state.metal==="gold") return d.rates[k]?.price ?? null;
-  return d[state.metal]?.price ?? null;
+  const key = state.metal==="gold" ? k : state.metal;
+  if(state.mode==="custom" && Number.isFinite(state.custom[key])) return state.custom[key];
+  return liveRate(key);
 }
 function price(rate, w, m, g){
   const base = rate*w, making = base*m/100, gst = (base+making)*g/100;
@@ -276,8 +300,27 @@ function chgPill(c){
   return `<span class="chg ${cls} num">${sign}${Math.abs(c).toLocaleString("en-IN")} ${arrow}</span>`;
 }
 
+function customCard(key, label){
+  const live = liveRate(key);
+  const v = Number.isFinite(state.custom[key]) ? state.custom[key] : live;
+  return `<div class="rcard edit"><label class="t" for="c-${key}">${label} /g</label>
+    <div class="pin"><span>₹</span><input id="c-${key}" data-key="${key}" type="number" min="0" step="1" inputmode="decimal" value="${v ?? ""}"></div>
+    <span class="live num">Live: ${live!=null?inr(live):"—"}</span></div>`;
+}
 function renderCards(){
   const d = state.data; const el = $("cards");
+  $("customBar").hidden = state.mode!=="custom";
+  if(state.mode==="custom"){
+    if(state.metal==="gold") el.innerHTML = ["24K","22K","18K"].map(k=>customCard(k, k+" Gold")).join("");
+    else {
+      const name = state.metal[0].toUpperCase()+state.metal.slice(1);
+      const big = state.metal==="silver" ? ["1 kg",1000] : ["10 g",10];
+      el.innerHTML = customCard(state.metal, name) +
+        `<div class="rcard"><span class="t">${name} /${big[0]} (custom)</span><div class="row"><span class="v num" id="bigVal" data-mult="${big[1]}">—</span></div></div>`;
+      updateBig();
+    }
+    return;
+  }
   if(state.metal==="gold"){
     el.innerHTML = ["24K","22K","18K"].map(k=>`
       <div class="rcard"><span class="t">${k} Gold /g</span>
@@ -291,6 +334,10 @@ function renderCards(){
       <div class="rcard"><span class="t">${name} /${big[0]}</span><div class="row"><span class="v num">${inr(r.price*big[1])}</span>${chgPill(r.change!=null?r.change*big[1]:null)}</div></div>
       <div class="rcard"><span class="t">Change since yesterday</span><div class="row"><span class="v num">${r.change==null?"—":((r.change/(r.price-r.change))*100).toFixed(2)+"%"}</span></div></div>`;
   }
+}
+
+function updateBig(){
+  const el = $("bigVal"); if(el) el.textContent = inr((rateFor(null)||0) * +el.dataset.mult);
 }
 
 function renderCalc(){
@@ -316,7 +363,7 @@ function renderCalc(){
 
 function sideHTML(p, rate){
   return `<dl class="num">
-      <dt>Rate /g</dt><dd>${inr(rate)}</dd>
+      ${state.mode==="custom" ? "" : `<dt>Rate /g</dt><dd>${inr(rate)}</dd>`}
       <dt>Base value</dt><dd>${inr(p.base)}</dd>
       <dt>Making</dt><dd>${inr(p.making)}</dd>
       <dt>GST</dt><dd>${inr(p.gst)}</dd>
@@ -341,6 +388,9 @@ function renderCompare(){
   const pa = price(ra,wa,m,g), pb = price(rb,wb,m,g);
   $("kA").textContent = a; $("pA").textContent = (PURITY[a]*100).toFixed(1)+"% pure";
   $("kB").textContent = b; $("pB").textContent = (PURITY[b]*100).toFixed(1)+"% pure";
+  document.querySelectorAll(".rate-in").forEach(l=>l.hidden = state.mode!=="custom");
+  if(document.activeElement!==$("rA")) $("rA").value = ra ?? "";
+  if(document.activeElement!==$("rB")) $("rB").value = rb ?? "";
   $("sideA").innerHTML = sideHTML(pa,ra);
   $("sideB").innerHTML = sideHTML(pb,rb);
   const diff = pa.total-pb.total;
@@ -389,6 +439,19 @@ function renderAll(){
   if(!state.data) return;
   renderCards(); renderCalc(); renderCompare(); renderChart();
 }
+// Recalculate without rebuilding the rate cards, so a field being typed in keeps focus.
+function renderNumbers(){
+  if(!state.data) return;
+  renderCalc(); renderCompare(); updateBig();
+}
+function setCustom(key, raw){
+  const v = parseFloat(raw);
+  if(Number.isFinite(v) && v>=0) state.custom[key] = v; else delete state.custom[key];
+  saveCustom();
+  const card = $("c-"+key);
+  if(card && document.activeElement!==card) card.value = Number.isFinite(state.custom[key]) ? state.custom[key] : (liveRate(key) ?? "");
+  renderNumbers();
+}
 
 async function load(refresh=false){
   $("refresh").disabled = true; $("refresh").textContent = "Refreshing…";
@@ -424,8 +487,22 @@ function segBind(groupSel, onPick){
 segBind(".seg[aria-label='Metal']", b=>state.metal=b.dataset.metal);
 segBind("#purity", b=>state.purity=b.dataset.k);
 segBind("#pair", b=>state.pair=[b.dataset.a,b.dataset.b]);
-["weight","making","gst","budget"].forEach(id=>$(id).addEventListener("input",renderAll));
-["A","B"].forEach(id=>$("w"+id).addEventListener("input",()=>{ sideEdited[id]=true; renderAll(); }));
+segBind("#rateMode", b=>{
+  state.mode=b.dataset.mode;
+  if(state.mode==="custom") for(const k of ["24K","22K","18K","silver","platinum"])
+    if(!Number.isFinite(state.custom[k]) && liveRate(k)!=null) state.custom[k] = liveRate(k);
+  saveCustom();
+});
+$("cards").addEventListener("input", e=>{ const k = e.target.dataset?.key; if(k) setCustom(k, e.target.value); });
+$("rA").addEventListener("input", e=>setCustom(state.pair[0], e.target.value));
+$("rB").addEventListener("input", e=>setCustom(state.pair[1], e.target.value));
+$("resetCustom").addEventListener("click", ()=>{
+  state.custom = {};
+  for(const k of ["24K","22K","18K","silver","platinum"]) if(liveRate(k)!=null) state.custom[k] = liveRate(k);
+  saveCustom(); renderAll();
+});
+["weight","making","gst","budget"].forEach(id=>$(id).addEventListener("input",renderNumbers));
+["A","B"].forEach(id=>$("w"+id).addEventListener("input",()=>{ sideEdited[id]=true; renderNumbers(); }));
 $("refresh").addEventListener("click",()=>load(true));
 load();
 setInterval(()=>load(), 30*60*1000);
